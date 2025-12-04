@@ -1,22 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sistem Monitoring Meja Restoran
 
-## Getting Started
+Aplikasi web untuk monitoring dan manajemen meja restoran secara real-time dengan sistem timer otomatis.
 
-First, run the development server:
+## 🎯 Fitur Utama
+
+1. **Customer Interface** - Scan QR untuk melihat meja tersedia dan reservasi
+2. **Timer Otomatis** - 10 menit untuk menuju meja + 30 menit untuk makan
+3. **Staff Cleaning Interface** - Scan QR meja untuk proses pembersihan
+4. **Dashboard Real-time** - Monitor semua status meja secara langsung
+
+## 🚀 Cara Menggunakan
+
+### Instalasi
+
+```bash
+npm install
+```
+
+### Jalankan Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka [http://localhost:3000](http://localhost:3000) di browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📱 Alur Penggunaan
+
+### 1. Customer
+- Scan QR tenant → Masuk ke `/customer`
+- Masukkan nama dan pilih meja yang tersedia
+- Timer 10 menit dimulai (waktu menuju meja)
+- Klik "Sudah Sampai" saat tiba di meja
+- Timer 30 menit dimulai (waktu makan)
+- Setelah selesai, meja otomatis berstatus "needs cleaning"
+
+### 2. Staff Cleaning
+- Akses `/cleaning`
+- Scan QR meja atau input nomor meja
+- Mulai proses pembersihan
+- Meja otomatis tersedia kembali setelah 5 menit
+
+### 3. Admin Dashboard
+- Akses `/dashboard`
+- Lihat status semua meja real-time
+- Monitor timer yang sedang berjalan
+- Statistik meja tersedia/terisi/kotor
+
+## 🎨 Status Meja
+
+- ✅ **Available** - Meja kosong dan bersih
+- ⏱️ **Reserved** - Customer menuju meja (10 menit)
+- 🍽️ **Occupied** - Customer sedang makan (30 menit)
+- ⚠️ **Needs Cleaning** - Menunggu staff pembersihan
+- 🧹 **Cleaning** - Sedang dibersihkan (5 menit)
+
+## 📡 API Endpoints
+
+- `GET /api/tables` - Dapatkan semua meja
+- `POST /api/tables/[id]/reserve` - Reservasi meja
+- `POST /api/tables/[id]/occupy` - Mulai makan di meja
+- `POST /api/tables/[id]/finish` - Selesai makan
+- `POST /api/tables/[id]/clean` - Mulai pembersihan
+
+## 🔧 Teknologi
+
+- **Next.js 15** - React Framework
+- **TypeScript** - Type Safety
+- **Tailwind CSS** - Styling
+- **REST API** - Backend Communication
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
