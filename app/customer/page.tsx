@@ -4,6 +4,34 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Table } from '@/lib/types';
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+import {
+  Users,
+  Utensils,
+  Clock,
+  CheckCircle2,
+  Ban,
+  Hourglass,
+  ArrowLeft,
+  BellRing,
+  Armchair,
+  User,
+  Loader2,
+  MapPin
+} from "lucide-react";
+
 export default function CustomerPage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
@@ -126,7 +154,7 @@ export default function CustomerPage() {
       });
 
       console.log('Response status:', res.status);
-      
+
       if (res.ok) {
         const updatedTable = await res.json();
         console.log('Updated table:', updatedTable);
@@ -159,233 +187,218 @@ export default function CustomerPage() {
   const availableTables = tables.filter(t => t.status === 'available');
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-muted/10">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm font-medium text-muted-foreground animate-pulse">Sinkronisasi data meja...</p>
+      </div>
+    );
   }
 
   // Blank Page - Waiting for Order
   if (currentPhase === 'waiting-order' && selectedTable) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
-        <div className="max-w-md w-full mx-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 text-center">
-            {/* Icon */}
-            <div className="mb-6">
-              <div className="mx-auto w-24 h-24 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-5xl">
-                🍽️
-              </div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-muted/20 p-6">
+        <Card className="w-full max-w-sm shadow-xl border-primary/10 overflow-hidden">
+          <div className="bg-primary/5 p-6 flex flex-col items-center justify-center space-y-4 border-b border-primary/10">
+            <div className="h-20 w-20 bg-background rounded-full flex items-center justify-center shadow-sm">
+              <Utensils className="h-10 w-10 text-primary" />
             </div>
-
-            {/* Title */}
-            <h1 className="text-3xl font-bold text-gray-800 mb-3">
-              Selamat Datang!
-            </h1>
-            <p className="text-lg text-gray-600 mb-2">
-              <span className="font-semibold text-purple-600">{customerName}</span>
-            </p>
-            <p className="text-gray-600 mb-8">
-              di <span className="font-bold text-2xl text-purple-700">Meja #{selectedTable.number}</span>
-            </p>
-
-            {/* Description */}
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-6 mb-8">
-              <p className="text-gray-700 mb-4">
-                Anda sudah sampai di meja. Silakan lihat menu dan klik tombol di bawah untuk memulai pemesanan.
-              </p>
-              <p className="text-sm text-gray-600">
-                ⏱️ Timer 30 menit akan dimulai setelah Anda memesan
-              </p>
+            <div className="text-center">
+              <h2 className="text-xl font-bold">Selamat Datang!</h2>
+              <p className="text-sm text-muted-foreground">Meja #{selectedTable.number}</p>
             </div>
-
-            {/* Order Button */}
-            <button
-              onClick={handleStartOrder}
-              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-xl font-bold py-6 px-8 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200"
-            >
-              🛎️ Mulai Pesan
-            </button>
-
-            <p className="text-xs text-gray-500 mt-4">
-              Klik tombol di atas saat Anda siap untuk memesan
-            </p>
           </div>
-        </div>
+
+          <CardContent className="p-6 space-y-6">
+            <div className="space-y-2 text-center">
+              <p className="text-base font-medium">Hai, {customerName}</p>
+              <p className="text-sm text-muted-foreground">
+                Silakan lihat menu yang tersedia. Klik tombol di bawah jika Anda sudah siap untuk memesan.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 text-xs text-amber-600 bg-amber-50 py-2 px-4 rounded-lg border border-amber-100">
+              <Clock className="h-3.5 w-3.5" />
+              <span>Waktu makan 30 menit dimulai setelah pesan</span>
+            </div>
+
+            <Button
+              onClick={handleStartOrder}
+              className="w-full h-12 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
+            >
+              <BellRing className="mr-2 h-4 w-4" />
+              Mulai Pesan
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-8 bg-gradient-to-br from-blue-50 to-blue-100">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-4xl font-bold text-center mb-2 text-gray-800">
-          Pilih Meja Anda
-        </h1>
-        <p className="text-center text-gray-600 mb-8">Selamat datang! Silakan pilih meja yang tersedia</p>
-
-        {/* Modal Konfirmasi Reservasi */}
-        {showReservationModal && selectedTable && timeRemaining !== null && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 animate-bounce-in">
-              <div className="text-center">
-                {/* Icon Success */}
-                <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
-                  <svg className="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                
-                {/* Judul */}
-                <h2 className="text-3xl font-bold text-gray-800 mb-2">
-                  ✅ Reservasi Berhasil!
-                </h2>
-                
-                <p className="text-gray-600 mb-6">
-                  Terima kasih, <span className="font-semibold text-blue-600">{customerName}</span>
-                </p>
-
-                {/* Info Meja */}
-                <div className="bg-blue-50 rounded-lg p-6 mb-6">
-                  <div className="text-6xl mb-3">🪑</div>
-                  <h3 className="text-2xl font-bold text-blue-800 mb-2">
-                    Meja #{selectedTable.number}
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    Kapasitas: {selectedTable.capacity} orang
-                  </p>
-                </div>
-
-                {/* Timer */}
-                <div className="bg-gradient-to-r from-orange-400 to-red-500 rounded-lg p-6 mb-6 text-white">
-                  <p className="text-sm font-semibold mb-2">⏱️ Waktu Menuju Meja</p>
-                  <div className="text-5xl font-bold mb-2">
-                    {formatTime(timeRemaining)}
-                  </div>
-                  <p className="text-sm opacity-90">
-                    Silakan segera menuju ke meja Anda
-                  </p>
-                </div>
-
-                {/* Instruksi */}
-                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 text-left">
-                  <p className="text-sm text-yellow-800">
-                    <strong>📍 Petunjuk:</strong><br />
-                    • Segera menuju ke meja #{selectedTable.number}<br />
-                    • Klik tombol "Sudah Sampai" saat tiba<br />
-                    • Timer akan berganti menjadi waktu makan (30 menit)
-                  </p>
-                </div>
-
-                {/* Tombol */}
-                <button
-                  onClick={closeModal}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-lg transition-colors shadow-lg"
-                >
-                  Mengerti, Saya Akan Ke Meja Sekarang
-                </button>
-              </div>
+    <div className="min-h-screen bg-gray-50/50 pb-28">
+      {/* Top Header Decoration */}
+      <div className="bg-white border-b sticky top-0 z-10 px-4 py-4 md:px-8">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
+              <Utensils className="h-5 w-5 text-white" />
             </div>
+            <h1 className="font-bold text-lg tracking-tight text-foreground">RestoApp</h1>
           </div>
-        )}
-
-        {/* Timer Display */}
-        {selectedTable && timeRemaining !== null && (
-          <div className="mb-8 bg-white p-6 rounded-lg shadow-lg text-center">
-            <h2 className="text-2xl font-bold mb-2 text-gray-800">
-              Meja #{selectedTable.number}
-            </h2>
-            <p className="text-gray-600 mb-4">
-              {currentPhase === 'walking' 
-                ? '⏱️ Waktu menuju ke meja' 
-                : '🍽️ Waktu makan'}
-            </p>
-            <div className="text-5xl font-bold text-blue-600 mb-4">
-              {formatTime(timeRemaining)}
-            </div>
-            {currentPhase === 'walking' && (
-              <button
-                onClick={handleArriveAtTable}
-                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                ✓ Saya Sudah Sampai di Meja
-              </button>
-            )}
+          <div className="text-xs text-muted-foreground font-medium bg-secondary px-2.5 py-1 rounded-full">
+            {availableTables.length} Meja Kosong
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* Name Input */}
+      <div className="max-w-md mx-auto p-4 md:max-w-5xl md:p-8 space-y-6">
+
+        {/* Welcome Section */}
         {!selectedTable && (
-          <div className="mb-8 bg-white p-6 rounded-lg shadow">
-            <label className="block text-gray-700 font-semibold mb-2">
-              Nama Anda:
-            </label>
-            <input
-              type="text"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Masukkan nama Anda"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="space-y-1 pt-2">
+            <h2 className="text-2xl font-bold tracking-tight">Halo, Pelanggan!</h2>
+            <p className="text-muted-foreground text-sm">Cari meja kosong dan mulai pesananmu.</p>
+          </div>
+        )}
+
+        {/* Input Name Section */}
+        {!selectedTable && (
+          <div className="sticky top-[73px] z-20 -mx-4 px-4 py-2 bg-gray-50/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/50 md:static md:bg-transparent md:mx-0 md:p-0">
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+              <Input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Masukkan nama Anda untuk reservasi..."
+                className="pl-10 h-12 text-base bg-white shadow-sm border-gray-200 focus-visible:ring-primary/20"
+              />
+            </div>
           </div>
         )}
 
         {/* Available Tables */}
         {!selectedTable && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">
-              Semua Meja ({tables.length})
-            </h2>
-            <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {tables.map((table) => {
-                const isAvailable = table.status === 'available';
-                return (
-                  <button
-                    key={table.id}
-                    onClick={() => isAvailable && handleReserveTable(table)}
-                    disabled={!isAvailable}
-                    className={`p-6 rounded-lg shadow transition-all ${
-                      isAvailable
-                        ? 'bg-gray-100 border-2 border-gray-300 hover:border-gray-400 hover:shadow-xl cursor-pointer'
-                        : 'bg-white border-2 border-red-500 cursor-not-allowed opacity-75'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">
-                        {isAvailable ? '🪑' : '🔒'}
-                      </div>
-                      <div className="text-2xl font-bold text-gray-800">
-                        Meja {table.number}
-                      </div>
-                      <div className="text-gray-600 text-sm">
-                        Kapasitas: {table.capacity} orang
-                      </div>
-                      <div className={`mt-2 font-semibold ${
-                        isAvailable ? 'text-gray-600' : 'text-red-600'
-                      }`}>
-                        {isAvailable ? '✓ Tersedia' : '✗ Terisi'}
-                      </div>
-                      {!isAvailable && table.customerName && (
-                        <div className="mt-1 text-xs text-gray-500">
-                          {table.customerName}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+            {tables.map((table) => {
+              const isAvailable = table.status === 'available';
+              return (
+                <button
+                  key={table.id}
+                  onClick={() => isAvailable && handleReserveTable(table)}
+                  disabled={!isAvailable}
+                  className={`
+                    group relative flex flex-col items-start p-4 rounded-xl border text-left transition-all duration-200
+                    ${isAvailable
+                      ? 'bg-white border-gray-200 hover:border-green-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98]'
+                      : 'bg-gray-50/80 border-gray-100 cursor-not-allowed opacity-80'
+                    }
+                  `}
+                >
+                  <div className="flex justify-between w-full mb-3">
+                    <span className="text-sm font-semibold text-gray-400 group-hover:text-primary transition-colors">
+                      #{table.number}
+                    </span>
+                    {isAvailable ? (
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 h-6 px-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Tersedia
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="bg-gray-100 text-gray-500 h-6 px-1.5">
+                        <Ban className="w-3.5 h-3.5 mr-1" /> Terisi
+                      </Badge>
+                    )}
+                  </div>
 
-            {availableTables.length === 0 && (
-              <div className="text-center py-8 mt-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                <div className="text-5xl mb-3">⏳</div>
-                <p className="text-lg font-semibold text-gray-700">Semua meja sedang terisi</p>
-                <p className="text-gray-600">Silakan tunggu beberapa saat</p>
-              </div>
-            )}
+                  <div className="flex-1 flex flex-col items-center justify-center w-full py-2 gap-2">
+                    {isAvailable ? (
+                      <div className="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center">
+                        <Armchair className="h-5 w-5 text-green-600" />
+                      </div>
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center grayscale">
+                        <Users className="h-5 w-5 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="text-center">
+                      <p className={`font-bold text-lg ${isAvailable ? 'text-gray-800' : 'text-gray-400'}`}>
+                        Meja {table.number}
+                      </p>
+                      <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                        <Users className="h-3 w-3" /> {table.capacity} Seats
+                      </p>
+                    </div>
+                  </div>
+
+                  {!isAvailable && table.customerName && (
+                    <div className="w-full mt-3 pt-3 border-t border-dashed border-gray-200">
+                      <p className="text-xs text-center text-gray-500 truncate max-w-full">
+                        {table.customerName}
+                      </p>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
 
-        <div className="mt-8 text-center">
-          <Link href="/" className="text-blue-600 hover:text-blue-700 font-semibold">
-            ← Kembali ke Halaman Utama
+        {/* Empty State */}
+        {!selectedTable && availableTables.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <div className="h-16 w-16 bg-yellow-50 rounded-full flex items-center justify-center mb-4">
+              <Hourglass className="h-8 w-8 text-yellow-500 animate-pulse" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">Semua meja penuh</h3>
+            <p className="text-muted-foreground max-w-xs mx-auto mt-1">
+              Mohon tunggu sebentar. Kami akan memberitahu jika ada meja yang kosong.
+            </p>
+          </div>
+        )}
+
+        {/* Active Timer Status Card - Sticky Bottom */}
+        {selectedTable && timeRemaining !== null && (
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 animate-in slide-in-from-bottom-full duration-500">
+            <div className="max-w-md mx-auto w-full">
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
+                    {currentPhase === 'walking' ? 'Menuju Lokasi' : 'Sisa Waktu'}
+                  </p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold text-primary tabular-nums tracking-tight">
+                      {formatTime(timeRemaining)}
+                    </span>
+                    <span className="text-sm font-medium text-gray-500">min</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-gray-900">Meja #{selectedTable.number}</div>
+                  <div className="text-xs text-muted-foreground">{selectedTable.capacity} Orang</div>
+                </div>
+              </div>
+
+              {currentPhase === 'walking' && (
+                <Button
+                  onClick={handleArriveAtTable}
+                  className="w-full h-12 text-base font-semibold bg-green-600 hover:bg-green-700 shadow-lg shadow-green-200 transition-all active:scale-[0.98]"
+                >
+                  <MapPin className="mr-2 h-4 w-4" />
+                  Saya Sudah Sampai
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="text-center pt-8 pb-4 hidden md:block">
+          <Link href="/">
+            <Button variant="ghost" className="gap-2 text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="h-4 w-4" />
+              Kembali ke Depan
+            </Button>
           </Link>
         </div>
       </div>
