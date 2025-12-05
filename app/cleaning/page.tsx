@@ -4,6 +4,34 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Table } from '@/lib/types';
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+import {
+  ScanLine,
+  Sparkles,
+  Trash2,
+  SprayCan,
+  Utensils,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowLeft,
+  Search,
+  Timer,
+  Loader2
+} from "lucide-react";
+
 export default function CleaningPage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,10 +75,10 @@ export default function CleaningPage() {
   // Notifikasi suara dan visual ketika ada meja baru yang perlu dibersihkan
   useEffect(() => {
     const dirtyCount = tables.filter(t => t.status === 'needs-cleaning').length;
-    
+
     if (dirtyCount > previousDirtyCountRef.current && previousDirtyCountRef.current > 0) {
       // Ada meja baru yang perlu dibersihkan
-      
+
       // Notifikasi browser (jika diizinkan)
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('🧹 Meja Perlu Dibersihkan!', {
@@ -59,14 +87,14 @@ export default function CleaningPage() {
           tag: 'cleaning-alert'
         });
       }
-      
+
       // Play sound alert (optional)
       try {
         const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBCuAzvLZiTYHGmi67OmfTBENT6zs7qZXFgpLo+PvuWUdBjmT1/HMey4FI3bK8N2RQAoUXrTp66hVFApGn+DyvmwhBCuAzvLZiTYHGmi67OmfTBENT6zs7qZXFgpLo+PvuWUdBjmT1/HMey4FI3bK8N2RQAoUXrTp66hVFApGn+DyvmwhBCuAzvLZiTYHGmi67OmfTBENT6zs7qZXFgpLo+PvuWUdBjmT1/HMey4FI3bK8N2RQAoUXrTp66hVFApGn+Dy');
-        audio.play().catch(() => {});
-      } catch (e) {}
+        audio.play().catch(() => { });
+      } catch (e) { }
     }
-    
+
     previousDirtyCountRef.current = dirtyCount;
   }, [tables]);
 
@@ -161,239 +189,184 @@ export default function CleaningPage() {
   };
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-muted/10">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm font-medium text-muted-foreground animate-pulse">Loading...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen p-8 bg-gradient-to-br from-green-50 to-green-100">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-4xl font-bold text-center mb-2 text-gray-800">
-          🧹 Staff Cleaning
-        </h1>
-        <p className="text-center text-gray-600 mb-8">Scan QR code di meja untuk memulai pembersihan</p>
+    <div className="min-h-screen p-4 md:p-8 bg-green-50/50">
+      <div className="max-w-6xl mx-auto space-y-8">
 
-        {/* Alert Banner - Meja yang perlu dibersihkan */}
-        {dirtyTables.length > 0 && (
-          <div className="mb-6 bg-red-100 border-l-4 border-red-500 p-4 rounded-lg shadow-lg animate-pulse">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg className="h-8 w-8 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3 flex-1">
-                <p className="text-lg font-bold text-red-800">
-                  ⚠️ PERHATIAN: {dirtyTables.length} Meja Perlu Dibersihkan!
-                </p>
-                <p className="text-sm text-red-700 mt-1">
-                  Meja nomor: {dirtyTables.map(t => `#${t.number}`).join(', ')}
-                </p>
-              </div>
-              <div className="ml-3">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-500 text-white">
-                  {dirtyTables.length}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Success Banner - Semua meja bersih */}
-        {dirtyTables.length === 0 && cleaningTables.length === 0 && (
-          <div className="mb-6 bg-green-100 border-l-4 border-green-500 p-4 rounded-lg shadow">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg className="h-6 w-6 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-green-800">
-                  ✨ Semua meja sudah bersih! Great job!
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Scanner Section */}
-        <div className="mb-8 bg-white p-6 rounded-lg shadow-lg">
-          <h2 className="text-xl font-bold mb-4 text-gray-800">Scan Meja</h2>
-          <div className="flex gap-4">
-            <input
-              type="number"
-              value={tableNumber}
-              onChange={(e) => setTableNumber(e.target.value)}
-              placeholder="Masukkan nomor meja"
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              onKeyPress={(e) => e.key === 'Enter' && handleScanTable()}
-            />
-            <button
-              onClick={handleScanTable}
-              className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-            >
-              Scan
-            </button>
-          </div>
-          <p className="text-sm text-gray-500 mt-2">
-            * Dalam implementasi real, ini akan menggunakan QR scanner
-          </p>
+        {/* Header */}
+        <div className="flex flex-col items-center space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-800 flex items-center gap-2">
+            <SprayCan className="h-8 w-8 text-green-600" />
+            Staff Cleaning
+          </h1>
+          <p className="text-muted-foreground">Dashboard operasional kebersihan meja</p>
         </div>
 
-        {/* Scanned Table Confirmation */}
-        {scannedTable && (
-          <div className="mb-8 bg-yellow-50 border-2 border-yellow-400 p-6 rounded-lg">
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">
-              Meja #{scannedTable.number}
-            </h2>
-            <p className="text-gray-700 mb-4">
-              Meja ini perlu dibersihkan. Mulai pembersihan?
-            </p>
-            <div className="flex gap-4">
-              <button
-                onClick={handleStartCleaning}
-                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                ✓ Mulai Bersihkan
-              </button>
-              <button
-                onClick={() => setScannedTable(null)}
-                className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
+        {/* Status Alerts */}
+        {dirtyTables.length > 0 ? (
+          <Alert variant="destructive" className="border-red-500 bg-red-50 animate-pulse">
+            <AlertTriangle className="h-5 w-5" />
+            <AlertTitle className="text-lg font-bold">PERHATIAN: {dirtyTables.length} Meja Kotor!</AlertTitle>
+            <AlertDescription>
+              Segera bersihkan meja: {dirtyTables.map(t => `#${t.number}`).join(', ')}
+            </AlertDescription>
+          </Alert>
+        ) : dirtyTables.length === 0 && cleaningTables.length === 0 ? (
+          <Alert className="border-green-500 bg-green-100 text-green-800">
+            <Sparkles className="h-5 w-5" />
+            <AlertTitle className="font-bold">Semua Bersih!</AlertTitle>
+            <AlertDescription>
+              Tidak ada antrian pembersihan saat ini. Good job!
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {/* Scanner Card */}
+        <Card className="max-w-xl mx-auto shadow-md border-green-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ScanLine className="h-5 w-5" />
+              Scan QR Meja
+            </CardTitle>
+            <CardDescription>Masukkan nomor meja atau scan QR untuk mulai membersihkan</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                value={tableNumber}
+                onChange={(e) => setTableNumber(e.target.value)}
+                placeholder="Nomor Meja..."
+                className="text-lg h-12"
+                onKeyPress={(e) => e.key === 'Enter' && handleScanTable()}
+              />
+              <Button onClick={handleScanTable} className="h-12 w-32 bg-green-600 hover:bg-green-700">
+                <Search className="mr-2 h-4 w-4" /> Scan
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cleaning Confirmation Dialog */}
+        <Dialog open={!!scannedTable} onOpenChange={(open) => !open && setScannedTable(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader className="text-center items-center gap-2">
+              <div className="h-16 w-16 bg-yellow-100 rounded-full flex items-center justify-center">
+                <Trash2 className="h-8 w-8 text-yellow-600" />
+              </div>
+              <DialogTitle className="text-2xl">Bersihkan Meja #{scannedTable?.number}?</DialogTitle>
+              <DialogDescription>
+                Konfirmasi bahwa Anda akan mulai membersihkan meja ini. Status akan berubah menjadi "Cleaning".
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="sm:justify-center gap-2">
+              <Button variant="outline" onClick={() => setScannedTable(null)} className="w-full">
                 Batal
-              </button>
-            </div>
-          </div>
-        )}
+              </Button>
+              <Button onClick={handleStartCleaning} className="w-full bg-green-600 hover:bg-green-700">
+                <SprayCan className="mr-2 h-4 w-4" />
+                Mulai Bersihkan
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-        {/* Occupied Tables - Meja Terisi */}
-        {occupiedTables.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">
-              Meja Terisi ({occupiedTables.length})
-            </h2>
-            <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {occupiedTables.map((table) => {
-                const timeRemaining = getTimeRemaining(table);
-                const statusText = getStatusText(table);
-                return (
-                  <div
-                    key={table.id}
-                    className={`bg-white p-6 rounded-lg shadow border-2 ${
-                      table.status === 'reserved' ? 'border-yellow-400' : 'border-blue-500'
-                    }`}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">
-                        {table.status === 'reserved' ? '🚶' : '🍽️'}
-                      </div>
-                      <div className="text-2xl font-bold text-gray-800">
-                        Meja {table.number}
-                      </div>
-                      {table.customerName && (
-                        <div className="text-sm text-gray-600 mb-1">
-                          👤 {table.customerName}
-                        </div>
-                      )}
-                      <div className="text-gray-600 text-sm mb-2">
-                        Kapasitas: {table.capacity} orang
-                      </div>
-                      <div className={`mt-2 font-semibold ${
-                        table.status === 'reserved' ? 'text-yellow-600' : 'text-blue-600'
-                      }`}>
-                        {statusText}
-                      </div>
-                      {timeRemaining !== null && timeRemaining > 0 && (
-                        <div className="mt-2 bg-gray-100 rounded-lg py-2 px-3">
-                          <div className="text-xs text-gray-600 mb-1">Waktu Tersisa</div>
-                          <div className="text-lg font-bold text-gray-800">
-                            {timeRemaining} menit
-                          </div>
-                        </div>
-                      )}
-                      {table.status === 'occupied' && (timeRemaining === null || timeRemaining === 0) && (
-                        <div className="mt-2 bg-purple-100 rounded-lg py-2 px-3">
-                          <div className="text-sm font-semibold text-purple-700">
-                            📝 Sedang Memesan
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {/* Main Grid Content */}
+        <div className="grid gap-8">
 
-        {/* Dirty Tables List */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-gray-800">
-            Meja Perlu Dibersihkan ({dirtyTables.length})
-          </h2>
-          {dirtyTables.length > 0 ? (
-            <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {dirtyTables.map((table) => (
-                <div
-                  key={table.id}
-                  className="bg-white p-6 rounded-lg shadow border-2 border-yellow-500"
-                >
-                  <div className="text-center">
-                    <div className="text-3xl mb-2">⚠️</div>
-                    <div className="text-2xl font-bold text-gray-800">
-                      Meja {table.number}
-                    </div>
-                    <div className="text-gray-600">
-                      Kapasitas: {table.capacity} orang
-                    </div>
-                    <div className="mt-2 text-yellow-600 font-semibold">
-                      Perlu dibersihkan
-                    </div>
-                  </div>
-                </div>
-              ))}
+          {/* 1. Dirty Tables (Highest Priority) */}
+          {dirtyTables.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+                Perlu Dibersihkan ({dirtyTables.length})
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {dirtyTables.map((table) => (
+                  <Card key={table.id} className="border-2 border-red-500 bg-red-50/50 shadow-sm">
+                    <CardContent className="p-6 text-center space-y-2">
+                      <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                        <Trash2 className="h-6 w-6 text-red-600 animate-bounce" />
+                      </div>
+                      <div className="text-2xl font-bold text-red-700">Meja {table.number}</div>
+                      <Badge variant="destructive">Urgent</Badge>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             </div>
-          ) : (
-            <div className="bg-white p-8 rounded-lg shadow text-center text-gray-500">
-              <div className="text-4xl mb-2">✨</div>
-              <p>Tidak ada meja yang perlu dibersihkan</p>
+          )}
+
+          {/* 2. Currently Cleaning */}
+          {cleaningTables.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-blue-600">
+                <SprayCan className="h-5 w-5" />
+                Sedang Dibersihkan ({cleaningTables.length})
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {cleaningTables.map((table) => (
+                  <Card key={table.id} className="border-2 border-blue-400 bg-blue-50/30">
+                    <CardContent className="p-6 text-center space-y-2">
+                      <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                        <Sparkles className="h-6 w-6 text-blue-600 animate-spin-slow" />
+                      </div>
+                      <div className="text-2xl font-bold text-blue-700">Meja {table.number}</div>
+                      <p className="text-xs text-blue-600">Auto-finish in 5m</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 3. Occupied Tables (Low Priority Info) */}
+          {occupiedTables.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-gray-600">
+                <Utensils className="h-5 w-5" />
+                Meja Terisi ({occupiedTables.length})
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 opacity-75">
+                {occupiedTables.map((table) => {
+                  const timeRemaining = getTimeRemaining(table);
+                  const statusText = getStatusText(table);
+                  return (
+                    <Card key={table.id} className={`border ${table.status === 'reserved' ? 'border-yellow-300 bg-yellow-50' : 'border-blue-200 bg-white'}`}>
+                      <CardContent className="p-4 text-center">
+                        <div className="text-lg font-bold text-gray-700">Meja {table.number}</div>
+                        <div className="text-sm text-muted-foreground mb-2">{table.customerName}</div>
+                        <Badge variant="secondary" className="mb-2">{statusText}</Badge>
+
+                        {timeRemaining !== null && timeRemaining > 0 && (
+                          <div className="flex items-center justify-center gap-1 text-xs font-mono font-medium text-gray-500">
+                            <Timer className="h-3 w-3" />
+                            {timeRemaining}m left
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Currently Cleaning */}
-        {cleaningTables.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">
-              Sedang Dibersihkan ({cleaningTables.length})
-            </h2>
-            <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {cleaningTables.map((table) => (
-                <div
-                  key={table.id}
-                  className="bg-white p-6 rounded-lg shadow border-2 border-blue-500"
-                >
-                  <div className="text-center">
-                    <div className="text-3xl mb-2">🧽</div>
-                    <div className="text-2xl font-bold text-gray-800">
-                      Meja {table.number}
-                    </div>
-                    <div className="text-gray-600">
-                      Kapasitas: {table.capacity} orang
-                    </div>
-                    <div className="mt-2 text-blue-600 font-semibold">
-                      Sedang dibersihkan
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="mt-8 text-center">
-          <Link href="/" className="text-green-600 hover:text-green-700 font-semibold">
-            ← Kembali ke Halaman Utama
+        <div className="text-center pt-8">
+          <Link href="/">
+            <Button variant="ghost" className="gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Kembali ke Halaman Utama
+            </Button>
           </Link>
         </div>
       </div>
