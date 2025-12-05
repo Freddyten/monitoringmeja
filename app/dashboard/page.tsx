@@ -122,7 +122,7 @@ export default function DashboardPage() {
             <MonitorPlay className="h-7 w-7 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white leading-none mb-1">MONITORING MEJA</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-white leading-none mb-1">Pasar Lama</h1>
             <p className="text-sm text-slate-400 font-medium">Live Status Feed</p>
           </div>
         </div>

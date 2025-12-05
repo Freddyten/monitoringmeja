@@ -245,7 +245,7 @@ export default function CustomerPage() {
             <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
               <Utensils className="h-5 w-5 text-white" />
             </div>
-            <h1 className="font-bold text-lg tracking-tight text-foreground">RestoApp</h1>
+            <h1 className="font-bold text-lg tracking-tight text-foreground">Pasar Lama</h1>
           </div>
           <div className="text-xs text-muted-foreground font-medium bg-secondary px-2.5 py-1 rounded-full">
             {availableTables.length} Meja Kosong
