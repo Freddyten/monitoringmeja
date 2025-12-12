@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Card } from "@/components/ui/card";
-import { 
-  Loader2, 
-  WifiOff, 
+import {
+  Loader2,
+  WifiOff,
   MonitorPlay,
   Clock
 } from "lucide-react";
@@ -56,8 +56,8 @@ export default function TVDashboard() {
         // Find active transaction for this specific table
         const activeTxn = apiTransactions.find(
           t => t.stand_id === standId &&
-          t.tables.table_number === apiTable.table_number &&
-          ['pending', 'preparing', 'ready'].includes(t.status)
+            t.tables.table_number === apiTable.table_number &&
+            ['pending', 'preparing', 'ready'].includes(t.status)
         );
 
         let status: TableStatus = 'available';
@@ -68,7 +68,7 @@ export default function TVDashboard() {
         if (activeTxn) {
           status = activeTxn.status === 'ready' ? 'reserved' : 'occupied';
           customerName = activeTxn.customer_name;
-          
+
           // Calculate elapsed minutes
           const startTime = new Date(activeTxn.created_at).getTime();
           const minutes = Math.floor((Date.now() - startTime) / 60000);
@@ -76,7 +76,7 @@ export default function TVDashboard() {
         } else if (!apiTable.is_available) {
           // If no active transaction but marked unavailable, assume cleaning/maintenance
           // You can adjust this logic based on how your backend sets is_available
-          status = 'occupied'; 
+          status = 'occupied';
         }
 
         organizedData[standId].push({
@@ -117,20 +117,34 @@ export default function TVDashboard() {
   // --- Helper: Status Colors (High Contrast for TV) ---
   const getStatusStyles = (status: TableStatus) => {
     switch (status) {
-      case 'available': 
+      case 'available':
         return 'bg-emerald-600 text-white border-emerald-500 shadow-[inset_0_0_20px_rgba(0,0,0,0.2)]';
-      case 'occupied': 
+      case 'occupied':
         return 'bg-slate-700 text-slate-200 border-slate-600 opacity-90'; // Dimmed to focus attention on open tables? Or Red?
-        // Alternative High Contrast: 'bg-red-600 text-white animate-pulse-slow'
-      case 'reserved': 
+      // Alternative High Contrast: 'bg-red-600 text-white animate-pulse-slow'
+      case 'reserved':
         return 'bg-amber-500 text-white border-amber-400 animate-pulse'; // Action needed
-      case 'needs-cleaning': 
+      case 'needs-cleaning':
       case 'cleaning':
-        return 'bg-purple-600 text-white border-purple-500'; 
-      default: 
+        return 'bg-purple-600 text-white border-purple-500';
+      default:
         return 'bg-slate-800 text-slate-500';
     }
   };
+
+
+  const STAND_NAMES: Record<number, string> = {
+    1: "Telur Gulung Haryadi",
+    2: "Lumpia Basah Bakso",
+    3: "Jagung Cheese Tarik",
+    4: "Matchaiya - Premium Matcha",
+    5: "Sakura Japanese Drink",
+    6: "Sempol Ayam Sabrina",
+    7: "Takoyaki",
+    8: "Lumpia Ubi Lumer",
+    9: "Cireng Gemoy",
+    10: "Papa Moi Dessert"
+  }
 
   if (loading && Object.keys(stands).length === 0) {
     return (
@@ -143,7 +157,7 @@ export default function TVDashboard() {
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex flex-col font-sans select-none cursor-none">
-      
+
       {/* 1. Header (Compact) */}
       <header className="flex justify-between items-center px-6 py-3 bg-slate-900 border-b border-slate-800 shrink-0 h-[60px]">
         <div className="flex items-center gap-3">
@@ -184,22 +198,34 @@ export default function TVDashboard() {
 
       {/* 2. The Grid Matrix (10 Columns x 5 Rows) */}
       <main className="flex-1 p-2 grid grid-cols-10 gap-1 bg-slate-950">
-        
+
         {/* Render Columns for each Stand (1-10) */}
         {Array.from({ length: 10 }, (_, i) => {
           const standId = i + 1;
           const tables = stands[standId] || [];
 
           return (
-            <div key={standId} className="flex flex-col gap-1 h-full">
-              {/* Column Header */}
-              <div className="bg-slate-900/80 rounded-t-lg p-2 text-center border-b-2 border-slate-800">
-                <span className="text-sm font-black text-slate-500 uppercase tracking-widest block">
-                  STAND
-                </span>
-                <span className="text-4xl font-black text-white leading-none">
+            <div key={standId} className="flex flex-col gap-1 h-full border-r border-slate-800/50 last:border-r-0 pr-1 last:pr-0">
+
+              {/* Stand Header with Name */}
+              <div className="bg-slate-900/80 rounded-t-lg p-2 text-center border-b-2 border-slate-800 min-h-[85px] flex flex-col justify-center relative overflow-hidden group">
+                {/* Background Number for style */}
+                <span className="absolute -top-2 -right-2 text-5xl font-black text-slate-800/30 select-none z-0">
                   {standId}
                 </span>
+
+                {/* Stand Number */}
+                <div className="relative z-10 flex items-center justify-center gap-1 mb-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">STAND</span>
+                  <span className="text-xl font-black text-white leading-none">{standId}</span>
+                </div>
+
+                {/* Stand Name - Auto clamping for long names */}
+                <div className="relative z-10 h-[2.4em] flex items-center justify-center">
+                  <span className="text-[10px] font-semibold text-slate-300 leading-tight uppercase line-clamp-2 px-1">
+                    {STAND_NAMES[standId] || `Tenant ${standId}`}
+                  </span>
+                </div>
               </div>
 
               {/* Table Slots (5 per stand) */}
@@ -212,7 +238,7 @@ export default function TVDashboard() {
                   }
 
                   return (
-                    <Card 
+                    <Card
                       key={table.id}
                       className={`
                         flex-1 flex flex-col items-center justify-center relative overflow-hidden rounded-md border-2 transition-colors duration-500
