@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Table, TableStatus } from '@/lib/types';
+import { Table, TableStatus, APITransaction } from '@/lib/types';
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,35 +16,169 @@ import {
   Ban,
   Sparkles,
   MonitorPlay,
-  Loader2
+  Loader2,
+  TrendingUp
 } from "lucide-react";
 
+// Import API functions
+import { fetchTables, getTableStats } from '@/lib/api/tables';
+import { fetchTransactions, getTransactionStats } from '@/lib/api/transactions';
+import { StandSelector, CompactStandSelector } from '@/components/StandSelector';
+
+interface DashboardData {
+  tables: Table[];
+  transactions: APITransaction[];
+  tableStats: Awaited<ReturnType<typeof getTableStats>> | null;
+  transactionStats: Awaited<ReturnType<typeof getTransactionStats>> | null;
+}
+
 export default function DashboardPage() {
-  const [tables, setTables] = useState<Table[]>([]);
+  const [selectedStand, setSelectedStand] = useState<number | null>(null);
+  const [data, setData] = useState<DashboardData>({
+    tables: [],
+    transactions: [],
+    tableStats: null,
+    transactionStats: null,
+  });
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [error, setError] = useState<string | null>(null);
+  const [standsData, setStandsData] = useState<Array<{ standId: number; total: number; available: number; occupied: number }>>([]);
 
-  const fetchTables = async () => {
+  // Load selected stand from localStorage
+  useEffect(() => {
+    const savedStand = localStorage.getItem('selectedStand');
+    if (savedStand) {
+      setSelectedStand(parseInt(savedStand));
+    }
+  }, []);
+
+  const handleStandSelect = (standId: number) => {
+    setSelectedStand(standId);
+    localStorage.setItem('selectedStand', standId.toString());
+  };
+
+  // Fetch stands data for counter
+  const fetchStandsData = async () => {
     try {
-      const res = await fetch('/api/tables');
-      const data = await res.json();
-      setTables(data);
+      const [apiTables, allTransactions] = await Promise.all([
+        fetchTables(),
+        fetchTransactions(),
+      ]);
+
+      // Calculate stats for each stand
+      const standsStats = Array.from({ length: 10 }, (_, i) => {
+        const standId = i + 1;
+        const standTables = apiTables.filter(t => t.stand_id === standId);
+        
+        const occupied = standTables.filter(table => {
+          return allTransactions.some(
+            t => t.stand_id === standId &&
+            t.tables.table_number === table.table_number &&
+            ['pending', 'preparing', 'ready'].includes(t.status)
+          );
+        }).length;
+
+        return {
+          standId,
+          total: standTables.length,
+          available: standTables.length - occupied,
+          occupied,
+        };
+      });
+
+      setStandsData(standsStats);
+    } catch (err) {
+      console.error('Error fetching stands data:', err);
+    }
+  };
+
+  // Auto-refresh stands data
+  useEffect(() => {
+    fetchStandsData();
+    const interval = setInterval(fetchStandsData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      // Fetch dari API eksternal
+      const [apiTables, apiTransactions, tableStats, transactionStats] = await Promise.all([
+        fetchTables(),
+        fetchTransactions(),
+        getTableStats(),
+        getTransactionStats(),
+      ]);
+
+      // Filter tables by selected stand using stand_id field
+      const filteredTables = selectedStand 
+        ? apiTables.filter(table => table.stand_id === selectedStand)
+        : apiTables;
+
+      // Convert API tables ke format Table dengan status berdasarkan transactions
+      const convertedTables: Table[] = filteredTables.map((apiTable) => {
+        const tableNumber = parseInt(apiTable.table_number);
+        
+        // Cari active transactions untuk table ini menggunakan stand_id dan table_number
+        const tableTransactions = apiTransactions.filter(
+          t => t.stand_id === apiTable.stand_id &&
+          t.tables.table_number === apiTable.table_number &&
+          ['pending', 'preparing', 'ready'].includes(t.status)
+        );
+        
+        let status: TableStatus = 'available';
+        let customerName: string | undefined;
+        let occupiedAt: number | undefined;
+        
+        if (tableTransactions.length > 0) {
+          const latestTransaction = tableTransactions[0];
+          
+          // Tentukan status berdasarkan transaction status
+          if (latestTransaction.status === 'ready') {
+            status = 'reserved'; // Makanan sudah siap, menunggu customer ambil
+          } else {
+            status = 'occupied'; // Ada order aktif
+          }
+          
+          customerName = latestTransaction.customer_name;
+          occupiedAt = new Date(latestTransaction.created_at).getTime();
+        } else if (!apiTable.is_available) {
+          status = 'occupied';
+        }
+        
+        return {
+          id: `table-${apiTable.stand_id}-${tableNumber}`,
+          number: tableNumber,
+          status,
+          capacity: 4, // Default capacity
+          customerName,
+          occupiedAt,
+        };
+      });
+
+      setData({
+        tables: convertedTables,
+        transactions: apiTransactions,
+        tableStats,
+        transactionStats,
+      });
       setLoading(false);
-    } catch (error) {
-      console.error('Error fetching tables:', error);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Gagal memuat data dari API');
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    // Initial fetch and setup polling
-    const timer = setTimeout(() => fetchTables(), 0);
-    const interval = setInterval(fetchTables, 2000); // Update setiap 2 detik
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-    };
-  }, []);
+    // Only fetch if stand is selected
+    if (selectedStand !== null) {
+      fetchDashboardData();
+      const interval = setInterval(fetchDashboardData, 5000); // Update setiap 5 detik
+      return () => clearInterval(interval);
+    }
+  }, [selectedStand]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -61,11 +195,12 @@ export default function DashboardPage() {
     }
     if (table.status === 'occupied' && table.occupiedAt) {
       const elapsed = currentTime - table.occupiedAt;
-      const remaining = Math.max(0, (30 * 60 * 1000) - elapsed);
-      return Math.ceil(remaining / 1000 / 60);
+      return Math.ceil(elapsed / 1000 / 60); // Show elapsed time instead
     }
     return null;
   };
+
+  const { tables, transactionStats } = data;
 
   const stats = {
     available: tables.filter(t => t.status === 'available').length,
@@ -95,7 +230,7 @@ export default function DashboardPage() {
   const getStatusLabel = (status: TableStatus) => {
     switch (status) {
       case 'available': return 'KOSONG';
-      case 'reserved': return 'RESERVED';
+      case 'reserved': return 'READY';
       case 'occupied': return 'TERISI';
       case 'needs-cleaning': return 'CLEANING';
       case 'cleaning': return 'WIP';
@@ -103,11 +238,43 @@ export default function DashboardPage() {
     }
   };
 
+  // Show stand selector if no stand selected
+  if (selectedStand === null) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6">
+        <div className="max-w-6xl mx-auto">
+          <StandSelector 
+            onStandSelect={handleStandSelect}
+            selectedStand={selectedStand}
+            standsData={standsData}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-muted/10">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-sm font-medium text-muted-foreground animate-pulse">Loading...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-slate-950">
+        <Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
+        <p className="text-sm font-medium text-slate-400 animate-pulse">Memuat data dari API...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-slate-950">
+        <div className="text-red-500 text-center">
+          <p className="text-lg font-bold mb-2">Error</p>
+          <p className="text-sm">{error}</p>
+          <button 
+            onClick={fetchDashboardData}
+            className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            Coba Lagi
+          </button>
+        </div>
       </div>
     );
   }
@@ -122,8 +289,18 @@ export default function DashboardPage() {
             <MonitorPlay className="h-7 w-7 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white leading-none mb-1">Pasar Lama</h1>
-            <p className="text-sm text-slate-400 font-medium">Live Status Feed</p>
+            <h1 className="text-2xl font-bold tracking-tight text-white leading-none mb-1">
+              Pasar Lama - Stand {selectedStand}
+            </h1>
+            <p className="text-sm text-slate-400 font-medium">
+              Live Status Feed
+              <button 
+                onClick={() => setSelectedStand(null)}
+                className="ml-3 text-blue-400 hover:text-blue-300 underline"
+              >
+                Ganti Stand
+              </button>
+            </p>
           </div>
         </div>
 
@@ -137,6 +314,16 @@ export default function DashboardPage() {
             <span className="text-3xl font-bold text-slate-300 leading-none">{stats.occupied + stats.reserved}</span>
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Terisi</span>
           </div>
+          {transactionStats && (
+            <div className="flex flex-col items-center px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg min-w-[120px]">
+              <span className="text-2xl font-bold text-blue-400 leading-none">
+                {transactionStats.pending + transactionStats.preparing + transactionStats.ready}
+              </span>
+              <span className="text-[10px] uppercase font-bold text-blue-600/80 tracking-wider flex items-center gap-1">
+                <TrendingUp className="h-3 w-3" /> Order Aktif
+              </span>
+            </div>
+          )}
         </div>
       </header>
 

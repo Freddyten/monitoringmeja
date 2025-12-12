@@ -1,7 +1,9 @@
-// Simple in-memory store untuk demo
-// Untuk production, gunakan database seperti PostgreSQL atau MongoDB
+// Store untuk data management dengan integrasi API
+// Menggabungkan data lokal dengan data dari API eksternal
 
-import { Table, TableStatus } from './types';
+import { Table, TableStatus, APITable, APITransaction } from './types';
+import { fetchTables } from './api/tables';
+import { fetchTransactions, getActiveTransactionsForTable } from './api/transactions';
 
 // Singleton pattern untuk mencegah re-initialization
 let tablesInstance: Table[] | null = null;
@@ -61,3 +63,117 @@ export function getTablesByStatus(status: TableStatus): Table[] {
 export function getAllTables(): Table[] {
   return tables;
 }
+
+// ===== API Integration Functions =====
+
+/**
+ * Sync tables from API ke local store
+ * Menggabungkan data dari API dengan status lokal
+ */
+export async function syncTablesFromAPI(): Promise<Table[]> {
+  try {
+    const apiTables = await fetchTables();
+    const apiTransactions = await fetchTransactions();
+    
+    // Map API tables ke format local Table
+    const syncedTables: Table[] = apiTables.map((apiTable) => {
+      const tableNumber = parseInt(apiTable.table_number);
+      
+      // Cari existing local table
+      const existingTable = tables.find(t => t.number === tableNumber);
+      
+      // Cari active transactions untuk table ini
+      const tableTransactions = apiTransactions.filter(
+        t => t.tables.table_number === apiTable.table_number &&
+        ['pending', 'preparing', 'ready'].includes(t.status)
+      );
+      
+      // Tentukan status berdasarkan availability dan transactions
+      let status: TableStatus = 'available';
+      let customerName: string | undefined;
+      let occupiedAt: number | undefined;
+      
+      if (!apiTable.is_available || tableTransactions.length > 0) {
+        status = 'occupied';
+        if (tableTransactions.length > 0) {
+          const latestTransaction = tableTransactions[0];
+          customerName = latestTransaction.customer_name;
+          occupiedAt = new Date(latestTransaction.created_at).getTime();
+        }
+      }
+      
+      return {
+        id: `table-${tableNumber}`,
+        number: tableNumber,
+        status: existingTable?.status || status,
+        capacity: existingTable?.capacity || 4, // Default capacity
+        customerName: existingTable?.customerName || customerName,
+        occupiedAt: existingTable?.occupiedAt || occupiedAt,
+        reservedAt: existingTable?.reservedAt,
+        needsCleaningAt: existingTable?.needsCleaningAt,
+        cleaningStartedAt: existingTable?.cleaningStartedAt,
+      };
+    });
+    
+    // Update tablesInstance
+    tablesInstance = syncedTables;
+    
+    return syncedTables;
+  } catch (error) {
+    console.error('Error syncing tables from API:', error);
+    // Return existing tables jika error
+    return tables;
+  }
+}
+
+/**
+ * Get combined data: local table + API transactions
+ */
+export async function getTableWithTransactions(tableNumber: number): Promise<{
+  table: Table | undefined;
+  transactions: APITransaction[];
+}> {
+  try {
+    const table = getTableByNumber(tableNumber);
+    const transactions = await getActiveTransactionsForTable(tableNumber.toString());
+    
+    return {
+      table,
+      transactions,
+    };
+  } catch (error) {
+    console.error('Error getting table with transactions:', error);
+    return {
+      table: getTableByNumber(tableNumber),
+      transactions: [],
+    };
+  }
+}
+
+/**
+ * Get all tables with their transactions
+ */
+export async function getAllTablesWithTransactions(): Promise<Array<{
+  table: Table;
+  transactions: APITransaction[];
+}>> {
+  try {
+    const allTransactions = await fetchTransactions();
+    
+    return tables.map(table => {
+      const tableTransactions = allTransactions.filter(
+        t => t.tables.table_number === table.number.toString() &&
+        ['pending', 'preparing', 'ready'].includes(t.status)
+      );
+      
+      return {
+        table,
+        transactions: tableTransactions,
+      };
+    });
+  } catch (error) {
+    console.error('Error getting all tables with transactions:', error);
+    return tables.map(table => ({ table, transactions: [] }));
+  }
+}
+

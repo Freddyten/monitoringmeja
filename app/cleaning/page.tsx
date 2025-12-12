@@ -1,70 +1,207 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Table } from '@/lib/types';
+import { APITransaction, TransactionStatus } from '@/lib/types';
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 import {
-  ScanLine,
   Sparkles,
-  Trash2,
-  SprayCan,
-  Utensils,
   CheckCircle2,
-  AlertTriangle,
   ArrowLeft,
-  Search,
-  Timer,
-  Loader2
+  Loader2,
+  Clock,
+  Utensils,
+  Package,
+  TrendingUp
 } from "lucide-react";
 
-export default function CleaningPage() {
-  const [tables, setTables] = useState<Table[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [scannedTable, setScannedTable] = useState<Table | null>(null);
-  const [tableNumber, setTableNumber] = useState('');
-  const previousDirtyCountRef = useRef(0);
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
+// Import API functions
+import { fetchTransactions, fetchCompletedTransactions } from '@/lib/api/transactions';
+import { fetchTables } from '@/lib/api/tables';
+import { StandSelector } from '@/components/StandSelector';
 
-  const fetchTables = async () => {
+interface TableCleaningStatus {
+  table_number: string;
+  table_name: string;
+  completedOrders: APITransaction[];
+  lastCompletedAt: string | null;
+  needsCleaning: boolean;
+}
+
+export default function CleaningPage() {
+  const [selectedStand, setSelectedStand] = useState<number | null>(null);
+  const [data, setData] = useState<TableCleaningStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState({
+    totalCompleted: 0,
+    needsCleaning: 0,
+    recentlyCompleted: 0,
+  });
+  const [standsData, setStandsData] = useState<Array<{ standId: number; total: number; available: number; occupied: number }>>([]);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [completedTransactions, setCompletedTransactions] = useState<APITransaction[]>([]);
+
+  // Load selected stand from localStorage
+  useEffect(() => {
+    const savedStand = localStorage.getItem('selectedStand');
+    if (savedStand) {
+      setSelectedStand(parseInt(savedStand));
+    }
+  }, []);
+
+  const handleStandSelect = (standId: number) => {
+    setSelectedStand(standId);
+    localStorage.setItem('selectedStand', standId.toString());
+  };
+
+  // Fetch stands data for counter
+  const fetchStandsData = async () => {
     try {
-      const res = await fetch('/api/tables');
-      const data = await res.json();
-      console.log('All tables:', data);
-      console.log('Occupied/Reserved tables:', data.filter((t: Table) => t.status === 'occupied' || t.status === 'reserved'));
-      setTables(data);
+      const [apiTables, allTransactions] = await Promise.all([
+        fetchTables(),
+        fetchTransactions(),
+      ]);
+
+      // Calculate stats for each stand
+      const standsStats = Array.from({ length: 10 }, (_, i) => {
+        const standId = i + 1;
+        const standTables = apiTables.filter(t => t.stand_id === standId);
+        
+        const occupied = standTables.filter(table => {
+          return allTransactions.some(
+            t => t.stand_id === standId &&
+            t.tables.table_number === table.table_number &&
+            ['pending', 'preparing', 'ready'].includes(t.status)
+          );
+        }).length;
+
+        return {
+          standId,
+          total: standTables.length,
+          available: standTables.length - occupied,
+          occupied,
+        };
+      });
+
+      setStandsData(standsStats);
+    } catch (err) {
+      console.error('Error fetching stands data:', err);
+    }
+  };
+
+  // Auto-refresh stands data
+  useEffect(() => {
+    fetchStandsData();
+    const interval = setInterval(fetchStandsData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchData = async () => {
+    if (selectedStand === null) return;
+    
+    try {
+      const [apiTables, allTransactions] = await Promise.all([
+        fetchTables(),
+        fetchTransactions(),
+      ]);
+
+      // Filter tables by selected stand using stand_id field
+      const standTables = apiTables.filter(table => 
+        table.stand_id === selectedStand
+      );
+
+      // Filter completed transactions dari hari ini
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const completedTxns = allTransactions.filter(
+        t => t.status === 'completed' && 
+        new Date(t.completed_at || t.updated_at) >= today
+      );
+
+      setCompletedTransactions(completedTxns);
+
+      // Group by table
+      const tableCleaningMap: Map<string, TableCleaningStatus> = new Map();
+
+      standTables.forEach(table => {
+        const tableCompleted = completedTxns.filter(
+          t => t.stand_id === selectedStand &&
+          t.tables.table_number === table.table_number
+        );
+
+        const lastCompleted = tableCompleted.length > 0
+          ? tableCompleted.sort((a, b) => 
+              new Date(b.completed_at || b.updated_at).getTime() - 
+              new Date(a.completed_at || a.updated_at).getTime()
+            )[0]
+          : null;
+
+        // Meja perlu dibersihkan jika ada completed order dalam 30 menit terakhir
+        const needsCleaning = lastCompleted 
+          ? (currentTime - new Date(lastCompleted.completed_at || lastCompleted.updated_at).getTime()) < (30 * 60 * 1000)
+          : false;
+
+        tableCleaningMap.set(table.table_number, {
+          table_number: table.table_number,
+          table_name: table.table_name,
+          completedOrders: tableCompleted,
+          lastCompletedAt: lastCompleted?.completed_at || lastCompleted?.updated_at || null,
+          needsCleaning,
+        });
+      });
+
+      const cleaningData = Array.from(tableCleaningMap.values())
+        .sort((a, b) => {
+          // Sort by needs cleaning first, then by last completed time
+          if (a.needsCleaning && !b.needsCleaning) return -1;
+          if (!a.needsCleaning && b.needsCleaning) return 1;
+          
+          if (a.lastCompletedAt && b.lastCompletedAt) {
+            return new Date(b.lastCompletedAt).getTime() - new Date(a.lastCompletedAt).getTime();
+          }
+          return 0;
+        });
+
+      setData(cleaningData);
+
+      // Calculate stats - will be recalculated by useEffect based on currentTime
+      updateStats(cleaningData, completedTxns);
+
       setLoading(false);
-    } catch (error) {
-      console.error('Error fetching tables:', error);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching cleaning data:', err);
+      setError('Gagal memuat data dari API');
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    // Initial fetch and setup polling
-    const timer = setTimeout(() => fetchTables(), 0);
-    const interval = setInterval(fetchTables, 2000); // Update setiap 2 detik untuk realtime
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-    };
-  }, []);
+  // Function to update stats based on current time
+  const updateStats = (cleaningData: TableCleaningStatus[], completedTxns: APITransaction[]) => {
+    const needsCleaningCount = cleaningData.filter(d => {
+      if (!d.lastCompletedAt) return false;
+      return (currentTime - new Date(d.lastCompletedAt).getTime()) < (30 * 60 * 1000);
+    }).length;
 
-  // Update current time every second for timer display
+    const recentlyCompletedCount = completedTxns.filter(t => {
+      const completedTime = new Date(t.completed_at || t.updated_at).getTime();
+      return (currentTime - completedTime) < (10 * 60 * 1000); // Last 10 minutes
+    }).length;
+
+    setStats({
+      totalCompleted: completedTxns.length,
+      needsCleaning: needsCleaningCount,
+      recentlyCompleted: recentlyCompletedCount,
+    });
+  };
+
+  // Update current time every second for real-time stats
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(Date.now());
@@ -72,303 +209,251 @@ export default function CleaningPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Notifikasi suara dan visual ketika ada meja baru yang perlu dibersihkan
+  // Recalculate stats when currentTime changes
   useEffect(() => {
-    const dirtyCount = tables.filter(t => t.status === 'needs-cleaning').length;
-
-    if (dirtyCount > previousDirtyCountRef.current && previousDirtyCountRef.current > 0) {
-      // Ada meja baru yang perlu dibersihkan
-
-      // Notifikasi browser (jika diizinkan)
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('🧹 Meja Perlu Dibersihkan!', {
-          body: `${dirtyCount} meja menunggu pembersihan`,
-          icon: '/favicon.ico',
-          tag: 'cleaning-alert'
-        });
-      }
-
-      // Play sound alert (optional)
-      try {
-        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBCuAzvLZiTYHGmi67OmfTBENT6zs7qZXFgpLo+PvuWUdBjmT1/HMey4FI3bK8N2RQAoUXrTp66hVFApGn+DyvmwhBCuAzvLZiTYHGmi67OmfTBENT6zs7qZXFgpLo+PvuWUdBjmT1/HMey4FI3bK8N2RQAoUXrTp66hVFApGn+DyvmwhBCuAzvLZiTYHGmi67OmfTBENT6zs7qZXFgpLo+PvuWUdBjmT1/HMey4FI3bK8N2RQAoUXrTp66hVFApGn+Dy');
-        audio.play().catch(() => { });
-      } catch (e) { }
+    if (data.length > 0 && completedTransactions.length > 0) {
+      updateStats(data, completedTransactions);
     }
+  }, [currentTime]);
 
-    previousDirtyCountRef.current = dirtyCount;
-  }, [tables]);
-
-  // Request notification permission on mount
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+    if (selectedStand !== null) {
+      fetchData();
+      const interval = setInterval(fetchData, 5000); // Update setiap 5 detik
+      return () => clearInterval(interval);
     }
-  }, []);
+  }, [selectedStand]);
 
-  const handleScanTable = async () => {
-    const num = parseInt(tableNumber);
-    if (isNaN(num)) {
-      alert('Nomor meja tidak valid');
-      return;
-    }
-
-    const table = tables.find(t => t.number === num);
-    if (!table) {
-      alert('Meja tidak ditemukan');
-      return;
-    }
-
-    if (table.status !== 'needs-cleaning') {
-      alert('Meja ini tidak perlu dibersihkan saat ini');
-      return;
-    }
-
-    setScannedTable(table);
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: 'numeric',
+      month: 'short',
+    }).format(date);
   };
 
-  const handleStartCleaning = async () => {
-    if (!scannedTable) return;
-
-    try {
-      const res = await fetch(`/api/tables/${scannedTable.id}/clean`, {
-        method: 'POST',
-      });
-
-      if (res.ok) {
-        alert(`Pembersihan meja #${scannedTable.number} dimulai!`);
-        setScannedTable(null);
-        setTableNumber('');
-        fetchTables();
-      }
-    } catch (error) {
-      console.error('Error starting cleaning:', error);
-    }
+  const getTimeSince = (dateString: string) => {
+    const now = Date.now();
+    const then = new Date(dateString).getTime();
+    const diff = Math.floor((now - then) / 1000 / 60); // minutes
+    
+    if (diff < 1) return 'Baru saja';
+    if (diff < 60) return `${diff} menit lalu`;
+    const hours = Math.floor(diff / 60);
+    return `${hours} jam lalu`;
   };
 
-  const dirtyTables = tables.filter(t => t.status === 'needs-cleaning');
-  const cleaningTables = tables.filter(t => t.status === 'cleaning');
-  const occupiedTables = tables.filter(t => t.status === 'occupied' || t.status === 'reserved');
-
-  console.log('Dirty tables count:', dirtyTables.length);
-  console.log('Cleaning tables count:', cleaningTables.length);
-  console.log('Occupied tables count:', occupiedTables.length);
-  console.log('Occupied tables:', occupiedTables);
-
-  const getTimeRemaining = (table: Table) => {
-    if (table.status === 'reserved' && table.reservedAt) {
-      const elapsed = currentTime - table.reservedAt;
-      const remaining = Math.max(0, (10 * 60 * 1000) - elapsed);
-      return Math.ceil(remaining / 1000 / 60);
-    }
-    if (table.status === 'occupied' && table.occupiedAt) {
-      const elapsed = currentTime - table.occupiedAt;
-      const remaining = Math.max(0, (30 * 60 * 1000) - elapsed);
-      return Math.ceil(remaining / 1000 / 60);
-    }
-    return null;
-  };
-
-  const formatTime = (minutes: number) => {
-    const mins = Math.floor(minutes);
-    const secs = Math.round((minutes - mins) * 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const getStatusText = (table: Table) => {
-    if (table.status === 'reserved') {
-      return 'Menuju Meja';
-    }
-    if (table.status === 'occupied') {
-      const timeRemaining = getTimeRemaining(table);
-      if (timeRemaining !== null && timeRemaining > 0) {
-        return 'Sedang Makan';
-      }
-      return 'Sedang Memesan';
-    }
-    return '';
-  };
+  // Show stand selector if no stand selected
+  if (selectedStand === null) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6">
+        <div className="max-w-6xl mx-auto">
+          <StandSelector 
+            onStandSelect={handleStandSelect}
+            selectedStand={selectedStand}
+            standsData={standsData}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-muted/10">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-sm font-medium text-muted-foreground animate-pulse">Loading...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-slate-50">
+        <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
+        <p className="text-sm font-medium text-slate-600 animate-pulse">Memuat data cleaning dari API...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-slate-50">
+        <div className="text-red-500 text-center">
+          <p className="text-lg font-bold mb-2">Error</p>
+          <p className="text-sm">{error}</p>
+          <button 
+            onClick={fetchData}
+            className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+          >
+            Coba Lagi
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-4 md:p-8 bg-green-50/50">
-      <div className="max-w-6xl mx-auto space-y-8">
-
-        {/* Header */}
-        <div className="flex flex-col items-center space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-800 flex items-center gap-2">
-            <SprayCan className="h-8 w-8 text-green-600" />
-            Staff Cleaning
-          </h1>
-          <p className="text-muted-foreground">Dashboard operasional kebersihan meja</p>
+    <div className="min-h-screen bg-slate-50 pb-20">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="h-6 w-6 text-blue-600" />
+                Cleaning Monitor - Stand {selectedStand}
+              </h1>
+              <p className="text-sm text-slate-600">
+                Status Pembersihan Meja dari API
+                <button 
+                  onClick={() => setSelectedStand(null)}
+                  className="ml-3 text-blue-600 hover:text-blue-700 underline"
+                >
+                  Ganti Stand
+                </button>
+              </p>
+            </div>
+            <Link href="/dashboard">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Dashboard
+              </Button>
+            </Link>
+          </div>
+          
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="text-2xl font-bold text-blue-700">{stats.totalCompleted}</div>
+              <div className="text-xs text-blue-700">Total Selesai Hari Ini</div>
+            </div>
+            <div className="text-center p-3 bg-orange-50 rounded-lg border border-orange-200">
+              <div className="text-2xl font-bold text-orange-700">{stats.needsCleaning}</div>
+              <div className="text-xs text-orange-700 flex items-center justify-center gap-1">
+                <Sparkles className="h-3 w-3" /> Perlu Dibersihkan
+              </div>
+            </div>
+            <div className="text-center p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+              <div className="text-2xl font-bold text-emerald-700">{stats.recentlyCompleted}</div>
+              <div className="text-xs text-emerald-700 flex items-center justify-center gap-1">
+                <TrendingUp className="h-3 w-3" /> 10 Menit Terakhir
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* Status Alerts */}
-        {dirtyTables.length > 0 ? (
-          <Alert variant="destructive" className="border-red-500 bg-red-50 animate-pulse">
-            <AlertTriangle className="h-5 w-5" />
-            <AlertTitle className="text-lg font-bold">PERHATIAN: {dirtyTables.length} Meja Kotor!</AlertTitle>
-            <AlertDescription>
-              Segera bersihkan meja: {dirtyTables.map(t => `#${t.number}`).join(', ')}
-            </AlertDescription>
-          </Alert>
-        ) : dirtyTables.length === 0 && cleaningTables.length === 0 ? (
-          <Alert className="border-green-500 bg-green-100 text-green-800">
-            <Sparkles className="h-5 w-5" />
-            <AlertTitle className="font-bold">Semua Bersih!</AlertTitle>
-            <AlertDescription>
-              Tidak ada antrian pembersihan saat ini. Good job!
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {/* Scanner Card */}
-        <Card className="max-w-xl mx-auto shadow-md border-green-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ScanLine className="h-5 w-5" />
-              Scan QR Meja
-            </CardTitle>
-            <CardDescription>Masukkan nomor meja atau scan QR untuk mulai membersihkan</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <Input
-                type="number"
-                value={tableNumber}
-                onChange={(e) => setTableNumber(e.target.value)}
-                placeholder="Nomor Meja..."
-                className="text-lg h-12"
-                onKeyPress={(e) => e.key === 'Enter' && handleScanTable()}
-              />
-              <Button onClick={handleScanTable} className="h-12 w-32 bg-green-600 hover:bg-green-700">
-                <Search className="mr-2 h-4 w-4" /> Scan
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Cleaning Confirmation Dialog */}
-        <Dialog open={!!scannedTable} onOpenChange={(open) => !open && setScannedTable(null)}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader className="text-center items-center gap-2">
-              <div className="h-16 w-16 bg-yellow-100 rounded-full flex items-center justify-center">
-                <Trash2 className="h-8 w-8 text-yellow-600" />
-              </div>
-              <DialogTitle className="text-2xl">Bersihkan Meja #{scannedTable?.number}?</DialogTitle>
-              <DialogDescription>
-                Konfirmasi bahwa Anda akan mulai membersihkan meja ini. Status akan berubah menjadi "Cleaning".
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="sm:justify-center gap-2">
-              <Button variant="outline" onClick={() => setScannedTable(null)} className="w-full">
-                Batal
-              </Button>
-              <Button onClick={handleStartCleaning} className="w-full bg-green-600 hover:bg-green-700">
-                <SprayCan className="mr-2 h-4 w-4" />
-                Mulai Bersihkan
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Main Grid Content */}
-        <div className="grid gap-8">
-
-          {/* 1. Dirty Tables (Highest Priority) */}
-          {dirtyTables.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-red-600">
-                <AlertTriangle className="h-5 w-5" />
-                Perlu Dibersihkan ({dirtyTables.length})
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {dirtyTables.map((table) => (
-                  <Card key={table.id} className="border-2 border-red-500 bg-red-50/50 shadow-sm">
-                    <CardContent className="p-6 text-center space-y-2">
-                      <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                        <Trash2 className="h-6 w-6 text-red-600 animate-bounce" />
-                      </div>
-                      <div className="text-2xl font-bold text-red-700">Meja {table.number}</div>
-                      <Badge variant="destructive">Urgent</Badge>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 2. Currently Cleaning */}
-          {cleaningTables.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-blue-600">
-                <SprayCan className="h-5 w-5" />
-                Sedang Dibersihkan ({cleaningTables.length})
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {cleaningTables.map((table) => (
-                  <Card key={table.id} className="border-2 border-blue-400 bg-blue-50/30">
-                    <CardContent className="p-6 text-center space-y-2">
-                      <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                        <Sparkles className="h-6 w-6 text-blue-600 animate-spin-slow" />
-                      </div>
-                      <div className="text-2xl font-bold text-blue-700">Meja {table.number}</div>
-                      <p className="text-xs text-blue-600">Auto-finish in 5m</p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 3. Occupied Tables (Low Priority Info) */}
-          {occupiedTables.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-gray-600">
-                <Utensils className="h-5 w-5" />
-                Meja Terisi ({occupiedTables.length})
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 opacity-75">
-                {occupiedTables.map((table) => {
-                  const timeRemaining = getTimeRemaining(table);
-                  const statusText = getStatusText(table);
-                  return (
-                    <Card key={table.id} className={`border ${table.status === 'reserved' ? 'border-yellow-300 bg-yellow-50' : 'border-blue-200 bg-white'}`}>
-                      <CardContent className="p-4 text-center">
-                        <div className="text-lg font-bold text-gray-700">Meja {table.number}</div>
-                        <div className="text-sm text-muted-foreground mb-2">{table.customerName}</div>
-                        <Badge variant="secondary" className="mb-2">{statusText}</Badge>
-
-                        {timeRemaining !== null && timeRemaining > 0 && (
-                          <div className="flex items-center justify-center gap-1 text-xs font-mono font-medium text-gray-500">
-                            <Timer className="h-3 w-3" />
-                            {timeRemaining}m left
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Needs Cleaning Section */}
+        {data.filter(d => d.needsCleaning).length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-orange-500 animate-pulse" />
+              Prioritas Pembersihan
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {data.filter(d => d.needsCleaning).map((item) => (
+                <Card key={item.table_number} className="border-orange-200 bg-orange-50/50">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{item.table_name}</CardTitle>
+                      <Badge className="bg-orange-500 text-white animate-pulse">
+                        Perlu Dibersihkan
+                      </Badge>
+                    </div>
+                    <CardDescription>
+                      Nomor: {item.table_number}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {item.lastCompletedAt && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Clock className="h-4 w-4 text-slate-500" />
+                          <span className="text-slate-600">
+                            {getTimeSince(item.lastCompletedAt)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Selesai: {formatDate(item.lastCompletedAt)}
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-orange-200">
+                          <div className="text-xs text-slate-600">
+                            {item.completedOrders.length} order selesai hari ini
                           </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* All Tables Section */}
+        <div>
+          <h2 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <Utensils className="h-5 w-5 text-slate-600" />
+            Semua Meja ({data.length})
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.filter(d => !d.needsCleaning).map((item) => (
+              <Card key={item.table_number} className="hover:shadow-md transition-shadow">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{item.table_name}</CardTitle>
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Bersih
+                    </Badge>
+                  </div>
+                  <CardDescription>
+                    Nomor: {item.table_number}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {item.completedOrders.length > 0 ? (
+                      <>
+                        {item.lastCompletedAt && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Clock className="h-4 w-4 text-slate-500" />
+                              <span className="text-slate-600">
+                                {getTimeSince(item.lastCompletedAt)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Terakhir: {formatDate(item.lastCompletedAt)}
+                            </div>
+                          </>
+                        )}
+                        <div className="pt-2 mt-2 border-t border-slate-200">
+                          <div className="text-xs text-slate-600 flex items-center gap-1">
+                            <Package className="h-3 w-3" />
+                            {item.completedOrders.length} order selesai hari ini
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-slate-400 py-4 text-center">
+                        Belum ada order hari ini
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
 
-        <div className="text-center pt-8">
-          <Link href="/">
-            <Button variant="ghost" className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Kembali ke Halaman Utama
-            </Button>
-          </Link>
-        </div>
+        {data.length === 0 && (
+          <div className="text-center py-12">
+            <div className="text-slate-400 mb-2">
+              <Sparkles className="h-16 w-16 mx-auto opacity-50" />
+            </div>
+            <p className="text-slate-600 font-medium">Tidak ada data meja</p>
+            <p className="text-sm text-slate-500 mt-1">
+              Tidak ada transaksi yang selesai hari ini
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
