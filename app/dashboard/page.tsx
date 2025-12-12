@@ -254,8 +254,8 @@ export default function TVDashboard() {
                       )}
 
                       {/* HUGE Table Number */}
-                      <span className="text-5xl font-black leading-none opacity-100 z-10">
-                        {table.number}
+                      <span className="text-4xl font-black leading-none opacity-100 z-10 scale-110 tracking-tight">
+                        {standId}-{table.number}
                       </span>
 
                       {/* Subtle Customer Name (Bottom) - Optional */}
