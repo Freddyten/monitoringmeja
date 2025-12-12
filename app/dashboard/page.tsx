@@ -1,411 +1,253 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { Table, TableStatus, APITransaction } from '@/lib/types';
-
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-
-import {
-  Users,
-  Clock,
-  CheckCircle2,
-  Utensils,
-  Ban,
-  Sparkles,
+import { useState, useEffect, useCallback } from 'react';
+import { Card } from "@/components/ui/card";
+import { 
+  Loader2, 
+  WifiOff, 
   MonitorPlay,
-  Loader2,
-  TrendingUp
+  Clock
 } from "lucide-react";
 
-// Import API functions
-import { fetchTables, getTableStats } from '@/lib/api/tables';
-import { fetchTransactions, getTransactionStats } from '@/lib/api/transactions';
-import { StandSelector, CompactStandSelector } from '@/components/StandSelector';
+// Import API functions - utilizing existing backend
+import { fetchTables } from '@/lib/api/tables';
+import { fetchTransactions } from '@/lib/api/transactions';
+import { APITable, APITransaction } from '@/lib/types';
 
-interface DashboardData {
-  tables: Table[];
-  transactions: APITransaction[];
-  tableStats: Awaited<ReturnType<typeof getTableStats>> | null;
-  transactionStats: Awaited<ReturnType<typeof getTransactionStats>> | null;
+// Types for our View Model
+type TableStatus = 'available' | 'reserved' | 'occupied' | 'needs-cleaning' | 'cleaning';
+
+interface DashboardTable {
+  id: number;
+  standId: number;
+  number: string; // "1", "2", etc.
+  status: TableStatus;
+  customerName?: string;
+  timeLabel?: string; // For elapsed time
 }
 
-export default function DashboardPage() {
-  const [selectedStand, setSelectedStand] = useState<number | null>(null);
-  const [data, setData] = useState<DashboardData>({
-    tables: [],
-    transactions: [],
-    tableStats: null,
-    transactionStats: null,
-  });
+// Configuration
+const REFRESH_INTERVAL = 5000; // 5 seconds
+
+export default function TVDashboard() {
+  const [stands, setStands] = useState<Record<number, DashboardTable[]>>({});
   const [loading, setLoading] = useState(true);
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [error, setError] = useState<string | null>(null);
-  const [standsData, setStandsData] = useState<Array<{ standId: number; total: number; available: number; occupied: number }>>([]);
 
-  // Load selected stand from localStorage
-  useEffect(() => {
-    const savedStand = localStorage.getItem('selectedStand');
-    if (savedStand) {
-      setSelectedStand(parseInt(savedStand));
-    }
-  }, []);
-
-  const handleStandSelect = (standId: number) => {
-    setSelectedStand(standId);
-    localStorage.setItem('selectedStand', standId.toString());
-  };
-
-  // Fetch stands data for counter
-  const fetchStandsData = async () => {
+  // --- Data Fetching Logic ---
+  const fetchData = useCallback(async () => {
     try {
-      const [apiTables, allTransactions] = await Promise.all([
+      const [apiTables, apiTransactions] = await Promise.all([
         fetchTables(),
         fetchTransactions(),
       ]);
 
-      // Calculate stats for each stand
-      const standsStats = Array.from({ length: 10 }, (_, i) => {
-        const standId = i + 1;
-        const standTables = apiTables.filter(t => t.stand_id === standId);
-        
-        const occupied = standTables.filter(table => {
-          return allTransactions.some(
-            t => t.stand_id === standId &&
-            t.tables.table_number === table.table_number &&
-            ['pending', 'preparing', 'ready'].includes(t.status)
-          );
-        }).length;
+      // We need to organize 50 tables into 10 stands
+      // Initialize empty structure for 10 stands
+      const organizedData: Record<number, DashboardTable[]> = {};
+      for (let i = 1; i <= 10; i++) organizedData[i] = [];
 
-        return {
-          standId,
-          total: standTables.length,
-          available: standTables.length - occupied,
-          occupied,
-        };
-      });
+      // Process all API tables
+      apiTables.forEach((apiTable) => {
+        const standId = apiTable.stand_id;
+        if (standId < 1 || standId > 10) return; // Safety check
 
-      setStandsData(standsStats);
-    } catch (err) {
-      console.error('Error fetching stands data:', err);
-    }
-  };
-
-  // Auto-refresh stands data
-  useEffect(() => {
-    fetchStandsData();
-    const interval = setInterval(fetchStandsData, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchDashboardData = async () => {
-    try {
-      // Fetch dari API eksternal
-      const [apiTables, apiTransactions, tableStats, transactionStats] = await Promise.all([
-        fetchTables(),
-        fetchTransactions(),
-        getTableStats(),
-        getTransactionStats(),
-      ]);
-
-      // Filter tables by selected stand using stand_id field
-      const filteredTables = selectedStand 
-        ? apiTables.filter(table => table.stand_id === selectedStand)
-        : apiTables;
-
-      // Convert API tables ke format Table dengan status berdasarkan transactions
-      const convertedTables: Table[] = filteredTables.map((apiTable) => {
-        const tableNumber = parseInt(apiTable.table_number);
-        
-        // Cari active transactions untuk table ini menggunakan stand_id dan table_number
-        const tableTransactions = apiTransactions.filter(
-          t => t.stand_id === apiTable.stand_id &&
+        // Find active transaction for this specific table
+        const activeTxn = apiTransactions.find(
+          t => t.stand_id === standId &&
           t.tables.table_number === apiTable.table_number &&
           ['pending', 'preparing', 'ready'].includes(t.status)
         );
-        
+
         let status: TableStatus = 'available';
-        let customerName: string | undefined;
-        let occupiedAt: number | undefined;
-        
-        if (tableTransactions.length > 0) {
-          const latestTransaction = tableTransactions[0];
+        let customerName = undefined;
+        let timeLabel = undefined;
+
+        // Determine Status based on Transaction or Table State
+        if (activeTxn) {
+          status = activeTxn.status === 'ready' ? 'reserved' : 'occupied';
+          customerName = activeTxn.customer_name;
           
-          // Tentukan status berdasarkan transaction status
-          if (latestTransaction.status === 'ready') {
-            status = 'reserved'; // Makanan sudah siap, menunggu customer ambil
-          } else {
-            status = 'occupied'; // Ada order aktif
-          }
-          
-          customerName = latestTransaction.customer_name;
-          occupiedAt = new Date(latestTransaction.created_at).getTime();
+          // Calculate elapsed minutes
+          const startTime = new Date(activeTxn.created_at).getTime();
+          const minutes = Math.floor((Date.now() - startTime) / 60000);
+          timeLabel = `${minutes}m`;
         } else if (!apiTable.is_available) {
-          status = 'occupied';
+          // If no active transaction but marked unavailable, assume cleaning/maintenance
+          // You can adjust this logic based on how your backend sets is_available
+          status = 'occupied'; 
         }
-        
-        return {
-          id: `table-${apiTable.stand_id}-${tableNumber}`,
-          number: tableNumber,
+
+        organizedData[standId].push({
+          id: apiTable.id,
+          standId: standId,
+          number: apiTable.table_number,
           status,
-          capacity: 4, // Default capacity
           customerName,
-          occupiedAt,
-        };
+          timeLabel
+        });
       });
 
-      setData({
-        tables: convertedTables,
-        transactions: apiTransactions,
-        tableStats,
-        transactionStats,
+      // Sort tables within each stand by number (1-5)
+      Object.keys(organizedData).forEach(key => {
+        const k = parseInt(key);
+        organizedData[k].sort((a, b) => parseInt(a.number) - parseInt(b.number));
       });
-      setLoading(false);
+
+      setStands(organizedData);
+      setLastUpdated(new Date());
       setError(null);
     } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-      setError('Gagal memuat data dari API');
+      console.error("Dashboard Sync Error:", err);
+      setError("Connection Lost");
+    } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    // Only fetch if stand is selected
-    if (selectedStand !== null) {
-      fetchDashboardData();
-      const interval = setInterval(fetchDashboardData, 5000); // Update setiap 5 detik
-      return () => clearInterval(interval);
-    }
-  }, [selectedStand]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
   }, []);
 
-  const getTimeRemaining = (table: Table) => {
-    if (table.status === 'reserved' && table.reservedAt) {
-      const elapsed = currentTime - table.reservedAt;
-      const remaining = Math.max(0, (10 * 60 * 1000) - elapsed);
-      return Math.ceil(remaining / 1000 / 60);
-    }
-    if (table.status === 'occupied' && table.occupiedAt) {
-      const elapsed = currentTime - table.occupiedAt;
-      return Math.ceil(elapsed / 1000 / 60); // Show elapsed time instead
-    }
-    return null;
-  };
+  // --- Auto Refresh Timer ---
+  useEffect(() => {
+    fetchData(); // Initial load
+    const interval = setInterval(fetchData, REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
-  const { tables, transactionStats } = data;
 
-  const stats = {
-    available: tables.filter(t => t.status === 'available').length,
-    reserved: tables.filter(t => t.status === 'reserved').length,
-    occupied: tables.filter(t => t.status === 'occupied').length,
-    needsCleaning: tables.filter(t => t.status === 'needs-cleaning').length,
-    cleaning: tables.filter(t => t.status === 'cleaning').length,
-  };
-
-  const getTileStyles = (status: TableStatus) => {
+  // --- Helper: Status Colors (High Contrast for TV) ---
+  const getStatusStyles = (status: TableStatus) => {
     switch (status) {
-      case 'available':
-        return 'bg-emerald-600 text-white border-emerald-500 shadow-[0_0_30px_rgba(5,150,105,0.3)] scale-100 z-10';
-      case 'reserved':
-        return 'bg-amber-500/90 text-white border-amber-600/50 opacity-90';
-      case 'occupied':
-        return 'bg-slate-800/90 text-slate-300 border-slate-700 opacity-80';
-      case 'needs-cleaning':
-        return 'bg-red-600/90 text-white border-red-700 animate-pulse';
+      case 'available': 
+        return 'bg-emerald-600 text-white border-emerald-500 shadow-[inset_0_0_20px_rgba(0,0,0,0.2)]';
+      case 'occupied': 
+        return 'bg-slate-700 text-slate-200 border-slate-600 opacity-90'; // Dimmed to focus attention on open tables? Or Red?
+        // Alternative High Contrast: 'bg-red-600 text-white animate-pulse-slow'
+      case 'reserved': 
+        return 'bg-amber-500 text-white border-amber-400 animate-pulse'; // Action needed
+      case 'needs-cleaning': 
       case 'cleaning':
-        return 'bg-blue-600/90 text-white border-blue-500 opacity-90';
-      default:
-        return 'bg-slate-800 text-slate-400';
+        return 'bg-purple-600 text-white border-purple-500'; 
+      default: 
+        return 'bg-slate-800 text-slate-500';
     }
   };
 
-  const getStatusLabel = (status: TableStatus) => {
-    switch (status) {
-      case 'available': return 'KOSONG';
-      case 'reserved': return 'READY';
-      case 'occupied': return 'TERISI';
-      case 'needs-cleaning': return 'CLEANING';
-      case 'cleaning': return 'WIP';
-      default: return status;
-    }
-  };
-
-  // Show stand selector if no stand selected
-  if (selectedStand === null) {
+  if (loading && Object.keys(stands).length === 0) {
     return (
-      <div className="min-h-screen bg-slate-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <StandSelector 
-            onStandSelect={handleStandSelect}
-            selectedStand={selectedStand}
-            standsData={standsData}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-slate-950">
-        <Loader2 className="h-10 w-10 animate-spin text-emerald-500" />
-        <p className="text-sm font-medium text-slate-400 animate-pulse">Memuat data dari API...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-slate-950">
-        <div className="text-red-500 text-center">
-          <p className="text-lg font-bold mb-2">Error</p>
-          <p className="text-sm">{error}</p>
-          <button 
-            onClick={fetchDashboardData}
-            className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-          >
-            Coba Lagi
-          </button>
-        </div>
+      <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-4">
+        <Loader2 className="w-12 h-12 animate-spin text-emerald-500" />
+        <h1 className="text-2xl font-bold">BOOTING SYSTEM...</h1>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen bg-slate-950 text-slate-100 flex flex-col p-6 overflow-hidden font-sans">
-
-      {/* 1. Top Bar: Header & Live Stats */}
-      <header className="flex items-center justify-between mb-6 shrink-0">
+    <div className="h-screen w-screen bg-slate-950 text-white overflow-hidden flex flex-col font-sans select-none cursor-none">
+      
+      {/* 1. Header (Compact) */}
+      <header className="flex justify-between items-center px-6 py-3 bg-slate-900 border-b border-slate-800 shrink-0 h-[60px]">
         <div className="flex items-center gap-3">
-          <div className="h-12 w-12 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <MonitorPlay className="h-7 w-7 text-white" />
+          <MonitorPlay className="text-emerald-500 w-6 h-6" />
+          <h1 className="text-xl font-bold tracking-wider text-slate-200">
+            PASAR LAMA
+          </h1>
+        </div>
+
+        {/* Legend */}
+        <div className="flex gap-6">
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+            <span className="text-sm font-bold text-slate-400 uppercase">Available</span>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white leading-none mb-1">
-              Pasar Lama - Stand {selectedStand}
-            </h1>
-            <p className="text-sm text-slate-400 font-medium">
-              Live Status Feed
-              <button 
-                onClick={() => setSelectedStand(null)}
-                className="ml-3 text-blue-400 hover:text-blue-300 underline"
-              >
-                Ganti Stand
-              </button>
-            </p>
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-slate-600"></span>
+            <span className="text-sm font-bold text-slate-400 uppercase">Occupied</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></span>
+            <span className="text-sm font-bold text-slate-400 uppercase">Ready/Rsrv</span>
           </div>
         </div>
 
-        {/* Stats Pills */}
-        <div className="flex gap-4">
-          <div className="flex flex-col items-center px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg min-w-[100px]">
-            <span className="text-3xl font-bold text-emerald-400 leading-none">{stats.available}</span>
-            <span className="text-[10px] uppercase font-bold text-emerald-600/80 tracking-wider">Tersedia</span>
-          </div>
-          <div className="flex flex-col items-center px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg min-w-[100px] opacity-60">
-            <span className="text-3xl font-bold text-slate-300 leading-none">{stats.occupied + stats.reserved}</span>
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Terisi</span>
-          </div>
-          {transactionStats && (
-            <div className="flex flex-col items-center px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg min-w-[120px]">
-              <span className="text-2xl font-bold text-blue-400 leading-none">
-                {transactionStats.pending + transactionStats.preparing + transactionStats.ready}
-              </span>
-              <span className="text-[10px] uppercase font-bold text-blue-600/80 tracking-wider flex items-center gap-1">
-                <TrendingUp className="h-3 w-3" /> Order Aktif
-              </span>
-            </div>
+        {/* System Status */}
+        <div className="flex items-center gap-4 text-xs font-mono text-slate-500">
+          {error ? (
+            <span className="flex items-center gap-1 text-red-500 font-bold animate-pulse">
+              <WifiOff className="w-3 h-3" /> OFFLINE
+            </span>
+          ) : (
+            <span className="text-emerald-600">● LIVE DATA</span>
           )}
+          <span>{lastUpdated.toLocaleTimeString()}</span>
         </div>
       </header>
 
-      {/* 2. Main Grid: Auto-fit to screen height */}
-      <main className="flex-1 grid grid-cols-4 gap-4 pb-2">
-        {tables.map((table) => {
-          const timeRemaining = getTimeRemaining(table);
-          const isAvailable = table.status === 'available';
+      {/* 2. The Grid Matrix (10 Columns x 5 Rows) */}
+      <main className="flex-1 p-2 grid grid-cols-10 gap-1 bg-slate-950">
+        
+        {/* Render Columns for each Stand (1-10) */}
+        {Array.from({ length: 10 }, (_, i) => {
+          const standId = i + 1;
+          const tables = stands[standId] || [];
 
           return (
-            <Card
-              key={table.id}
-              className={`
-                relative border-2 flex flex-col items-center justify-center text-center transition-all duration-300 rounded-2xl
-                ${getTileStyles(table.status)}
-              `}
-            >
-              {/* Card Header Content */}
-              <div className="absolute top-4 right-4 flex items-center gap-2">
-                {isAvailable ? (
-                  <Badge className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm">
-                    {table.capacity} Seats
-                  </Badge>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-xs font-mono font-medium opacity-80 bg-black/20 px-2 py-1 rounded">
-                    {timeRemaining ? (
-                      <>
-                        <Clock className="h-3 w-3" /> {timeRemaining}m
-                      </>
-                    ) : (
-                      <span className="uppercase">{getStatusLabel(table.status)}</span>
-                    )}
-                  </div>
-                )}
+            <div key={standId} className="flex flex-col gap-1 h-full">
+              {/* Column Header */}
+              <div className="bg-slate-900/80 rounded-t-lg p-2 text-center border-b-2 border-slate-800">
+                <span className="text-sm font-black text-slate-500 uppercase tracking-widest block">
+                  STAND
+                </span>
+                <span className="text-4xl font-black text-white leading-none">
+                  {standId}
+                </span>
               </div>
 
-              {/* Main Number - Huge Typography */}
-              <CardContent className="p-0 flex flex-col items-center justify-center h-full w-full pt-6">
-                <span className="text-[10px] uppercase tracking-[0.2em] font-bold opacity-60 mb-2">
-                  MEJA
-                </span>
-                <span className="text-8xl font-black tracking-tighter leading-none mb-4">
-                  {table.number}
-                </span>
+              {/* Table Slots (5 per stand) */}
+              <div className="flex-1 flex flex-col gap-1">
+                {Array.from({ length: 5 }, (_, j) => {
+                  const table = tables[j]; // Assuming sorted 1-5
+                  // Safety: if table data is missing for a specific slot
+                  if (!table) {
+                    return <div key={j} className="flex-1 bg-slate-900/30 rounded border border-slate-900/50" />;
+                  }
 
-                {/* Secondary Icon/Status */}
-                <div className="h-8 flex items-center justify-center">
-                  {table.status === 'available' && <CheckCircle2 className="h-8 w-8 animate-bounce" />}
-                  {table.status === 'occupied' && <Utensils className="h-6 w-6 opacity-50" />}
-                  {table.status === 'reserved' && <Clock className="h-6 w-6 opacity-50" />}
-                  {table.status === 'needs-cleaning' && <Sparkles className="h-6 w-6" />}
-                  {table.status === 'cleaning' && <Ban className="h-6 w-6" />}
-                </div>
-              </CardContent>
+                  return (
+                    <Card 
+                      key={table.id}
+                      className={`
+                        flex-1 flex flex-col items-center justify-center relative overflow-hidden rounded-md border-2 transition-colors duration-500
+                        ${getStatusStyles(table.status)}
+                      `}
+                    >
+                      {/* Status Indicator (Timer or Icon) */}
+                      {table.timeLabel && (
+                        <div className="absolute top-1 right-1 flex items-center gap-1 bg-black/40 rounded px-1.5 py-0.5 backdrop-blur-sm">
+                          <Clock className="w-3 h-3 text-white/80" />
+                          <span className="text-xs font-mono font-bold">{table.timeLabel}</span>
+                        </div>
+                      )}
 
-              {/* Bottom Customer Name (If exists, mostly for Waiters) */}
-              {table.customerName && !isAvailable && (
-                <div className="absolute bottom-0 w-full p-3 bg-black/20 backdrop-blur-sm border-t border-white/5">
-                  <p className="text-sm font-medium truncate max-w-full px-2 opacity-90">
-                    {table.customerName}
-                  </p>
-                </div>
-              )}
-            </Card>
+                      {/* HUGE Table Number */}
+                      <span className="text-5xl font-black leading-none opacity-100 z-10">
+                        {table.number}
+                      </span>
+
+                      {/* Subtle Customer Name (Bottom) - Optional */}
+                      {table.customerName && (
+                        <div className="absolute bottom-0 w-full bg-black/40 text-center py-0.5 backdrop-blur-sm">
+                          <p className="text-[10px] font-medium truncate px-1 text-white/90">
+                            {table.customerName.split(' ')[0]} {/* First name only for space */}
+                          </p>
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </main>
-
-      {/* 3. Footer Legend (Minimal) */}
-      <footer className="shrink-0 pt-3 flex justify-center gap-8 border-t border-slate-800/50">
-        {[
-          { color: 'bg-emerald-500', label: 'Tersedia' },
-          { color: 'bg-slate-700', label: 'Terisi' },
-          { color: 'bg-amber-500', label: 'Reserved' },
-          { color: 'bg-red-600', label: 'Perlu Bersih' },
-        ].map((item, idx) => (
-          <div key={idx} className="flex items-center gap-2">
-            <span className={`h-3 w-3 rounded-full ${item.color} shadow-[0_0_10px_currentColor]`} />
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{item.label}</span>
-          </div>
-        ))}
-      </footer>
     </div>
   );
 }
